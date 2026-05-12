@@ -533,9 +533,22 @@ function airMass(P,T){return P&&T?(1013.25/P)*(1+0.01*(T-15)):null;}
 // ═══════════════════════════════════════════════════════════════════════════
 function tickClock(){
   const now=new Date();
-  const d=now.toLocaleDateString('en',{weekday:'short',year:'numeric',month:'short',day:'numeric'});
-  const t=now.toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-  document.getElementById('dt-display').textContent=`${d}  ${t}`;
+  const tz=S?.tz||null;
+  const abbr=S?.tzAbbr||'';
+  const opts_d={weekday:'short',year:'numeric',month:'short',day:'numeric'};
+  const opts_t={hour:'2-digit',minute:'2-digit',second:'2-digit'};
+  let d,t;
+  if(tz){
+    try{
+      d=new Intl.DateTimeFormat('en',{timeZone:tz,...opts_d}).format(now);
+      t=new Intl.DateTimeFormat('en',{timeZone:tz,...opts_t}).format(now);
+    }catch(e){d=now.toLocaleDateString('en',opts_d);t=now.toLocaleTimeString('en',opts_t);}
+  } else {
+    d=now.toLocaleDateString('en',opts_d);
+    t=now.toLocaleTimeString('en',opts_t);
+  }
+  const label=tz?(abbr?` [${abbr}]`:' [STA]'):'';
+  document.getElementById('dt-display').textContent=`${d}  ${t}${label}`;
 }
 setInterval(tickClock,1000);
 tickClock();
@@ -735,7 +748,8 @@ function go(){
         rGrid();rAll();
         const done=Object.keys(S.md).length;
         if(done===MODELS.length){
-          const ts=new Date().toLocaleTimeString();
+          const _n=new Date();
+          const ts=S.tz?new Intl.DateTimeFormat('en',{timeZone:S.tz,hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(_n):_n.toLocaleTimeString();
           const hdot=document.getElementById('hdot');
           const hok=document.getElementById('hok');
           const ok=MODELS.filter(m=>S.md[m.id]?.ok).length;
@@ -887,8 +901,12 @@ function rCurrentWx(){
   const d=S.md[bestId]?.d;
   if(!d?.current) return;
   const cur=d.current,f=S.useFah;
-  const now=new Date();
-  document.getElementById('cw-time').textContent=now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})+' · '+MODELS.find(m=>m.id===bestId)?.name;
+  const _nowCW=new Date();
+  const _cwTz=S.tz||null;
+  let _cwTime;
+  if(_cwTz){try{_cwTime=new Intl.DateTimeFormat('en',{timeZone:_cwTz,hour:'2-digit',minute:'2-digit'}).format(_nowCW)+(S.tzAbbr?` [${S.tzAbbr}]`:'');}catch(e){_cwTime=_nowCW.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}}
+  else{_cwTime=_nowCW.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}
+  document.getElementById('cw-time').textContent=_cwTime+' · '+MODELS.find(m=>m.id===bestId)?.name;
   const code=cur.weather_code??0;
   document.getElementById('cw-row').innerHTML=[
     {l:'TEMPERATURE',v:(cur.temperature_2m!=null?fmtT(cur.temperature_2m,f)+unitT(f):'—')},
@@ -908,7 +926,14 @@ function rCurrentWx(){
 function rMETAR(){
   if(!S.metar?.length){document.getElementById('metar-raw').textContent='METAR unavailable for this station';return;}
   const m=S.metar[0],f=S.useFah;
-  if(m.reportTime){const t=new Date(m.reportTime);document.getElementById('metar-time').textContent=t.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})+' '+t.toLocaleDateString([],{month:'short',day:'numeric'});}
+  if(m.reportTime){
+    const _mt=new Date(m.reportTime);
+    const _mtz=S.tz||null;
+    let _ms,_md;
+    if(_mtz){try{_ms=new Intl.DateTimeFormat('en',{timeZone:_mtz,hour:'2-digit',minute:'2-digit'}).format(_mt);_md=new Intl.DateTimeFormat('en',{timeZone:_mtz,month:'short',day:'numeric'}).format(_mt)+(S.tzAbbr?` [${S.tzAbbr}]`:'');}catch(e){_ms=_mt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});_md=_mt.toLocaleDateString([],{month:'short',day:'numeric'});}}
+    else{_ms=_mt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});_md=_mt.toLocaleDateString([],{month:'short',day:'numeric'});}
+    document.getElementById('metar-time').textContent=_ms+' '+_md;
+  }
   document.getElementById('metar-raw').textContent=m.rawOb||m.rawMetar||'—';
   const temp=m.temp!=null?fmtT(m.temp,f)+unitT(f):'—';
   const dp=m.dewp!=null?fmtT(m.dewp,f)+unitT(f):'—';
@@ -974,11 +999,19 @@ function rChart48(isT,f){
   svg+=`<text x="${xp(24)+3}" y="${pt+7}" fill="#f4be50" font-size="7">+24h</text>`;
   svg+='</svg>';
   document.getElementById('chart48').innerHTML=svg;
-  const now=new Date();
+  const _now48=new Date();
+  const _tz48=S.tz||null;
   let labels='';
   for(let i=0;i<=H48;i+=6){
-    const d=new Date(now.getTime()+i*3600000);
-    const l=i===0?'Now':(d.getHours()===0?d.toLocaleDateString([],{weekday:'short'}):d.getHours()+'h');
+    const _d=new Date(_now48.getTime()+i*3600000);
+    let l;
+    if(i===0){l='Now';}
+    else if(_tz48){
+      try{
+        const _hr=+new Intl.DateTimeFormat('en',{timeZone:_tz48,hour:'numeric',hour12:false}).format(_d);
+        l=_hr===0?new Intl.DateTimeFormat('en',{timeZone:_tz48,weekday:'short'}).format(_d):_hr+'h';
+      }catch(e){l=_d.getHours()===0?_d.toLocaleDateString([],{weekday:'short'}):_d.getHours()+'h';}
+    } else {l=_d.getHours()===0?_d.toLocaleDateString([],{weekday:'short'}):_d.getHours()+'h';}
     labels+=`<span class="c48-lbl">${l}</span>`;
   }
   document.getElementById('c48-labels').innerHTML=labels;
@@ -1178,9 +1211,18 @@ async function runAI(){
   btn.disabled=true;btn.textContent='Analysing…';
   box.innerHTML=`<div class="ai-text" style="color:var(--tx3)">Synthesising 14-model, 11-variable ensemble with regime context and METAR…</div>`;
   const p=S.last,c=p.city,f=S.useFah;
-  const now=new Date();
-  const dateStr=now.toLocaleDateString('en',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
-  const timeStr=now.toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit',timeZoneName:'short'});
+  const _nowAI=new Date();
+  const _aiTz=S.tz||null;
+  let dateStr,timeStr;
+  if(_aiTz){
+    try{
+      dateStr=new Intl.DateTimeFormat('en',{timeZone:_aiTz,weekday:'long',month:'long',day:'numeric',year:'numeric'}).format(_nowAI);
+      timeStr=new Intl.DateTimeFormat('en',{timeZone:_aiTz,hour:'2-digit',minute:'2-digit'}).format(_nowAI)+(S.tzAbbr?` ${S.tzAbbr}`:'');
+    }catch(e){dateStr=_nowAI.toLocaleDateString('en',{weekday:'long',month:'long',day:'numeric',year:'numeric'});timeStr=_nowAI.toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit',timeZoneName:'short'});}
+  } else {
+    dateStr=_nowAI.toLocaleDateString('en',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+    timeStr=_nowAI.toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit',timeZoneName:'short'});
+  }
   const varLines=VDEFS.map(v=>{const st=getVarStats(v);if(!st)return`  ${v.lbl}: no data`;
     let val;if(v.key==='temperature_2m'||v.key==='dew_point_2m')val=fmtT(st.m,f)+unitT(f);
     else if(v.key==='wind_direction_10m')val=`${Math.round(st.m)}° (${degToCard(st.m)})`;
